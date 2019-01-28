@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context" xmlns:tx="http://www.springframework.org/schema/tx"
+       xmlns:mvc="http://www.springframework.org/schema/mvc" xmlns:aop="http://www.springframework.org/schema/aop"
+       xmlns:task="http://www.springframework.org/schema/task"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+                           http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+                           http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd
+                           http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc.xsd
+                           http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+                           http://www.springframework.org/schema/task http://www.springframework.org/schema/task/spring-task.xsd">
+
+    <context:annotation-config/>
+    <context:component-scan base-package="com.myit"/>
+    <!--启用aop:aspectj框架的自动代理,基于注解的方式需要在xml文件中加入如下配置,使AspectJ注解起作用：自动为匹配的类生成代理对象-->
+    <aop:aspectj-autoproxy/>
+
+
+    <!-- ==================================加载properties配置文件=========================+========================== -->
+    <!-- =========================================================================================================== -->
+    <!--加载properties配置文件-->
+    <!--在此xml引用方式为<property name="username" value="${jdbc.database.username}"/>-->
+    <!--在类的字段上引用方式为@Value("${jdbc.database.username}")-->
+    <bean id="propertyPlaceholderConfigurer"
+          class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <property name="locations">
+            <array>
+                <value>classpath:db.properties</value>
+            </array>
+        </property>
+    </bean>
+
+    <!-- ==============================================数据库=============================+========================== -->
+    <!-- =========================================================================================================== -->
+    <!--数据源-->
+    <bean id="dataSource" class="org.apache.commons.dbcp2.BasicDataSource">
+        <property name="driverClassName" value="${jdbc.database.driverClass}"/>
+        <property name="url" value="${jdbc.database.url}"/>
+        <property name="username" value="${jdbc.database.username}"/>
+        <property name="password" value="${jdbc.database.password}"/>
+        <property name="maxTotal" value="${jdbc.database.maxTotal}"/>
+        <property name="maxIdle" value="${jdbc.database.maxIdle}"/>
+        <property name="minIdle" value="${jdbc.database.minIdle}"/>
+        <property name="maxWaitMillis" value="${jdbc.database.maxWaitMillis}"/>
+        <property name="initialSize" value="${jdbc.database.initialSize}"/>
+    </bean>
+
+    <bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+        <property name="dataSource" ref="dataSource"/>
+        <property name="configLocation" value="classpath:mybatis-config.xml"/>
+        <property name="mapperLocations" value="classpath:mappers/*.xml"/>
+    </bean>
+
+    <!--通过扫描的形式配置Mapper类,并注入到spring ioc容器中-->
+    <bean id="mapperScannerConfigurer" class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+        <!--同时也会扫描子包，多个包时可以用","相隔-->
+        <property name="basePackage" value="com.myit.dao"/>
+        <!-- bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean" -->
+        <!--value的值是SqlSessionFactoryBean的name，即id-->
+        <property name="sqlSessionFactoryBeanName" value="sqlSessionFactory"/>
+        <!--指定标注了指定注解时才扫描为Mapper-->
+        <property name="annotationClass" value="org.springframework.stereotype.Repository"/>
+    </bean>
+
+    <!-- 配置事务管理器 -->
+    <bean id="dataSourceTransactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+        <property name="dataSource" ref="dataSource"/>
+    </bean>
+    <tx:annotation-driven transaction-manager="dataSourceTransactionManager"/>
+
+    <!-- ============================================Spring MVC===================================================== -->
+    <!-- =========================================================================================================== -->
+    <!--spring mvc注解驱动-->
+    <mvc:annotation-driven/>
+    <!--使用默认的Servlet来响应静态文件-->
+    <mvc:default-servlet-handler/>
+    <!-- =================@ResponseBody===================== -->
+    <bean id="mappingJackson2HttpMessageConverter"
+          class="org.springframework.http.converter.json.MappingJackson2HttpMessageConverter">
+        <property name="supportedMediaTypes">
+            <list>
+                <value>application/json;charset=UTF-8</value>
+            </list>
+        </property>
+    </bean>
+
+    <bean class="org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter">
+        <property name="messageConverters">
+            <list>
+                <ref bean="mappingJackson2HttpMessageConverter"/>
+            </list>
+        </property>
+    </bean>
+
+
+    <!--========================================@Async:异步处理======================================================-->
+    <!--=============================================================================================================-->
+    <!--
+        这个注解用于标注某个方法或某个类里面的全部方法都是须要异步处理的。被注解的方法被调用的时候。会在新线程中运行，而调用它
+        的方法会在原来的线程中运行。这样能够避免堵塞、以及保证任务的实时性。适用于处理log、发送邮件、短信……等。
+        注解的应用范围：
+            类：表示这个类中的全部方法都是异步的
+            方法：表示这种方法是异步的，假设类也注解了。则以这种方法的注解为准
+    -->
+    <!--当配置多个executor时，被@Async("id")指定使用-->
+    <!--keep-alive：超过core size的那些线程，任务完毕后，再经过这个时长（秒）会被结束掉-->
+    <!--queue-capacity：当最小的线程数已经被占用满后，新的任务会被放进queue里面，当这个queue的capacity也被占满之后，
+        pool里面会创建新线程处理这个任务。直到总线程数达到了max size，这时系统会拒绝这个任务并抛出TaskRejectedException
+        异常（缺省配置的情况下，能够通过rejection-policy来决定怎样处理这样的情况）。缺省值为：Integer.MAX_VALUE-->
+    <!--rejection-policy：当pool已经达到max size的时候，怎样处理新任务
+            ABORT（缺省）：抛出TaskRejectedException异常，然后不运行
+            DISCARD：不运行，也不抛出异常
+            DISCARD_OLDEST：丢弃queue中最旧的那个任务
+            CALLER_RUNS：不在新线程中运行任务，而是有调用者所在的线程来运行-->
+    <task:executor id="asyncExecutor" pool-size="50-100" queue-capacity="10" rejection-policy="CALLER_RUNS"/>
+    <!--executor属性：指定一个缺省的executor给@Async默认使用。-->
+    <task:annotation-driven executor="asyncExecutor"/>
+
+    <!--shiro-->
+    <import resource="spring-shiro.xml"/>
+</beans>
